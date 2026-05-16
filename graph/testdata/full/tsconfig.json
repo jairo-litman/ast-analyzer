@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "ESNext",
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "strict": true,
+        "baseUrl": ".",
+        "paths": {
+            "@models/*": ["src/models/*"],
+            "@services/*": ["src/services/*"],
+            "@utils/*": ["src/utils/*"]
+        }
+    }
+}

@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "declaration": false,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "allowSyntheticDefaultImports": true,
+        "allowJs": true,
+        "checkJs": false,
+        "lib": ["ESNext"],
+        "types": ["node", "jest"],
+        "typeRoots": ["./src/types", "./node_modules/@types"],
+        "module": "NodeNext",
+        "target": "ESNext",
+        "moduleResolution": "NodeNext", // foo
+        "paths": {
+            "@/*": ["src/*"],
+            "lib/*": ["common/lib/*", "vendor/*"]
+        }
+    }
+}
