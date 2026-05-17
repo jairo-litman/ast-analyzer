@@ -10,22 +10,15 @@ import (
 
 const cutMarker = "<- cut content ->"
 
-// moduleCallSiteContextLines is the number of source lines to include
-// on each side of a module-scope call site. Module-scope calls
-// (e.g. test blocks, top-level wiring) become unreadable when shown
-// as bare `target(...)` expressions; expanding by a small fixed
-// window surfaces the enclosing `it(...)` / `describe(...)` opener
-// or the surrounding top-level statement. mergeRanges later
-// collapses overlapping expansions so dense test files render as
-// one contiguous block.
+// moduleCallSiteContextLines is the number of source lines to keep
+// on each side of a module-scope call site so the enclosing
+// describe/it block or top-level statement surfaces in the recorte.
 const moduleCallSiteContextLines = 3
 
-// RenderRedacted produces a multi-file source-faithful view of ctx:
-// the target's file with imports + enclosing class scaffolding (other
-// methods elided), and each caller/callee in its own file section.
-// Cut regions become `<- cut content ->` markers. A per-file metadata
-// comment lists the callees/callers contributing content to that file
-// with their BFS depth and inclusion mode (body / signature).
+// RenderRedacted emits a multi-file, source-faithful view of ctx
+// with `<- cut content ->` markers between kept ranges and a
+// per-file metadata comment summarising the callees, callers, and
+// type entries that contributed content.
 func RenderRedacted(ctx *Context, p *graph.Project) (string, error) {
 	cache := newSourceCache(p)
 	perFile, files, err := computeFileSections(ctx, p, cache)
@@ -59,12 +52,9 @@ func RenderRedacted(ctx *Context, p *graph.Project) (string, error) {
 	return sb.String(), nil
 }
 
-// RenderMarkdown is RenderRedacted's source-faithful structure
-// dressed up for direct LLM-prompt consumption: a top-level title
-// names the target, each file gets a `## file: <path>` heading, and
-// the per-file source rides inside a fenced TS code block. The
-// metadata comment is emitted inside the fence as `// ...` lines so
-// it travels with the source when pasted into a chat.
+// RenderMarkdown wraps RenderRedacted's structure in `## file:`
+// headings and fenced TS code blocks. The metadata comment travels
+// inside the fence so it survives copy-paste into a chat.
 func RenderMarkdown(ctx *Context, p *graph.Project) (string, error) {
 	cache := newSourceCache(p)
 	perFile, files, err := computeFileSections(ctx, p, cache)
@@ -162,19 +152,12 @@ func formatTypeEntry(te TypeEntry) string {
 	return fmt.Sprintf("%s (depth=%d, %s, origins=%s)", te.Symbol.Name, te.Depth, te.Symbol.Kind, origins)
 }
 
-// expandForLeadingComment returns the byte offset to use as the
-// effective start of a declaration when a doc comment immediately
-// precedes it. Supports `/** ... */` (and plain `/* ... */`) block
-// comments and runs of `//` line comments, with arbitrary whitespace
-// AND declaration-modifier keywords (`export`, `default`,
-// `abstract`, ...) between the comment and the declaration. Returns
-// decl unchanged when no preceding comment is found.
-//
-// The modifier walk exists because tree-sitter often anchors a
-// declaration node's StartByte at the inner keyword (`class`,
-// `function`) and leaves wrapping modifiers (`export class`) in an
-// outer node. Treating them as transparent prefix tokens lets the
-// doc comment above `export class Foo` reach `Foo`.
+// expandForLeadingComment returns the start byte rewound past any
+// immediately-preceding `/** */`, `/* */`, or `//` doc comment.
+// Whitespace and declaration-modifier keywords (export, default,
+// abstract, ...) between the comment and decl are walked through,
+// because tree-sitter often anchors decl at the inner keyword and
+// leaves modifiers in an outer node.
 func expandForLeadingComment(source []byte, decl uint) uint {
 	if decl == 0 || int(decl) > len(source) {
 		return decl
@@ -312,16 +295,9 @@ func isAllWhitespace(b []byte) bool {
 	return true
 }
 
-// computeFileSections runs the per-file range planning shared by
-// RenderRedacted and RenderMarkdown: collects imports, the target's
-// enclosing scope, callees, and callers; resolves class redactions;
-// and returns the byte ranges keyed by file plus a stable file order
-// (target file first, then lex-sorted).
-//
-// keepKind distinguishes how a function-kind symbol is retained inside
-// a class: fully (Body present or it is the target) keeps the entire
-// body; signatureOnly subtracts the body bytes but keeps the
-// declaration line.
+// keepKind tags how a function-kind symbol is retained inside a
+// class. keepFully keeps the whole body; keepSignatureOnly subtracts
+// the body bytes but keeps the declaration line.
 type keepKind int
 
 const (
@@ -329,11 +305,12 @@ const (
 	keepSignatureOnly
 )
 
+// computeFileSections plans the per-file byte ranges shared by
+// RenderRedacted and RenderMarkdown. Returns the ranges keyed by
+// file plus a stable file order (target file first, then sorted).
 func computeFileSections(ctx *Context, p *graph.Project, cache *sourceCache) (map[string][]byteRange, []string, error) {
 	// keptInsideClass marks function-kind symbol IDs that survive
-	// class redaction. The mode (full body vs signature) flows from
-	// the Body field on each callee/caller entry. The target is
-	// always kept fully.
+	// class redaction. The target is always kept fully.
 	keptInsideClass := map[string]keepKind{ctx.Target.Symbol.ID: keepFully}
 	for _, c := range ctx.Callees {
 		if c.Body != "" {

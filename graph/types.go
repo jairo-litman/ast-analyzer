@@ -48,55 +48,37 @@ type Symbol struct {
 	InterfaceDetails *InterfaceDetails `json:"interface_details,omitempty"`
 	IsDefaultExport  bool              `json:"is_default_export,omitempty"`
 
-	// LocalTypes maps a local-variable name declared in a function-
-	// kind symbol's body to the class name it holds, populated from
-	// `const x = new T(...)` and `const x: T = ...` declarations.
-	// `const x = factory()` entries are merged in by ResolveCalls
-	// once the called function's ReturnType is known. Used to
-	// resolve `x.method()` against T's class chain.
+	// LocalTypes maps a local-var name in a function body to the
+	// class name it holds. Filled from `const x: T = ...` and
+	// `const x = new T(...)` at build time, then enriched by
+	// ResolveCalls from the binding maps below.
 	LocalTypes map[string]string `json:"local_types,omitempty"`
 
-	// LocalCallBindings maps a local-variable name to the bare
-	// identifier of the function it was initialized from, for
-	// declarations like `const x = factory();` or `const x = await
-	// factory();`. ResolveCalls walks this in a pre-pass, looks up
-	// `factory` against the file's scope, and populates LocalTypes
-	// with `stripGenericArgs(factory.ReturnType)` when the lookup
-	// succeeds.
+	// LocalCallBindings maps a local-var name to a bare-identifier
+	// callee, for `const x = factory()` and the awaited form.
+	// Resolved by ResolveCalls into LocalTypes.
 	LocalCallBindings map[string]string `json:"local_call_bindings,omitempty"`
 
-	// LocalMethodBindings maps a local-variable name to the
-	// (receiver, method) pair that initialized it, for
-	// `const x = receiver.method(...)` and the awaited form.
-	// Resolved during enrichment by looking up receiver's type in
-	// the same symbol's LocalTypes, finding method on that class,
-	// and copying its stripped ReturnType into LocalTypes.
-	// Iteration in the enrichment loop lets multi-hop chains
-	// (`const a = fn(); const b = a.x(); const c = b.y()`) converge.
+	// LocalMethodBindings maps a local-var name to the
+	// (receiver, method) pair that initialised it, for
+	// `const x = recv.method(...)` and the awaited form. Iterated
+	// in ResolveCalls so multi-hop chains converge.
 	LocalMethodBindings map[string]LocalMethodTarget `json:"local_method_bindings,omitempty"`
 
-	// LocalDestructureBindings maps a local-variable name to the
-	// destructuring source that produced it, for declarations like
-	// `const { ctx, sut } = factory();` and the awaited /
-	// method-on-receiver / renamed variants. Resolved during
-	// enrichment by following the source call's return type to a
-	// class or interface and looking up the destructured property.
+	// LocalDestructureBindings maps a local-var name to its
+	// destructuring source, for `const { a, b } = factory()` and
+	// the awaited / method-on-receiver / renamed variants.
 	LocalDestructureBindings map[string]LocalDestructureSource `json:"local_destructure_bindings,omitempty"`
 
-	// ReturnType is the function-kind symbol's declared return
-	// type. Copied from the extractor's annotation when present;
-	// otherwise inferred from a consistent `return new T(...)`
-	// pattern in the body. Empty for non-function symbols and for
-	// functions with neither annotation nor a confidently-inferable
-	// return shape.
+	// ReturnType is the function symbol's declared return type, or
+	// an inferred return from `return new T(...)` when no annotation
+	// is present. Empty otherwise.
 	ReturnType string `json:"return_type,omitempty"`
 
-	// InlineReturnProperties is populated by the extractor when a
-	// function lacks an explicit return type and returns an object
-	// literal at top level. Maps property name → source spec used
-	// at enrichment time to answer destructuring property lookups
-	// (`const { a, b } = factory()`) without requiring the factory
-	// to declare a named class/interface return type.
+	// InlineReturnProperties carries the per-property types of an
+	// object-literal `return { ... }` from a function without an
+	// explicit return type. Drives destructuring resolution without
+	// a named return type.
 	InlineReturnProperties map[string]InlineReturnSource `json:"inline_return_properties,omitempty"`
 
 	// LocalTypeOrigins tags each LocalTypes entry with the rule that

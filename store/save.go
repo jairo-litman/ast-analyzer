@@ -240,9 +240,7 @@ func encodeSymbolDetails(s graph.Symbol) (string, error) {
 }
 
 // functionDetails is the JSON envelope persisted in symbols.details
-// for function-kind symbols. Older indexes wrote just the
-// LocalTypes map at the top level; Load handles that legacy shape
-// as a fallback so re-indexing isn't strictly required.
+// for function-kind symbols.
 type functionDetails struct {
 	LocalTypes               map[string]string                       `json:"local_types,omitempty"`
 	LocalCallBindings        map[string]string                       `json:"local_call_bindings,omitempty"`

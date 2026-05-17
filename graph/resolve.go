@@ -6,26 +6,9 @@ import (
 	"github.com/jairo-litman/ast-analyzer/extractor"
 )
 
-// ResolveCalls populates each CallSite.ResolvedTo with the IDs of the
-// Symbol(s) it statically targets. Calls whose target isn't statically
-// knowable are left with empty ResolvedTo.
-//
-// Resolves:
-//   - direct identifier calls in the same file
-//   - named / aliased / default imports
-//   - re-export chains: named, aliased, star, namespace
-//     (`export * as Foo from`), and default (`export { default as X }`)
-//   - namespace imports with single-level member access
-//   - `new T(...)` constructors
-//   - `this.method()` and `super.method()` against the enclosing class
-//     chain, falling back to the implements / interface-extends chain
-//   - `localVar.method()` when localVar is bound via `new T(...)` or
-//     `: T` in the enclosing function's body
-//
-// Does not resolve:
-//   - method calls on instances whose type can't be inferred locally
-//     (factory returns, generics, union types)
-//   - deep namespace access (`pkg.sub.member()`)
+// ResolveCalls populates each CallSite.ResolvedTo with the IDs of
+// the Symbol(s) it statically targets. Unresolvable calls keep an
+// empty ResolvedTo. Also runs populateTypeRefs at the end.
 func ResolveCalls(p *Project) {
 	ctx := newResolveContext(p)
 	ctx.enrichLocalTypesFromBindings()
@@ -39,27 +22,13 @@ func ResolveCalls(p *Project) {
 	populateTypeRefs(ctx)
 }
 
-// enrichLocalTypesFromBindings is the fixed-point pass that turns
-// deferred bindings into LocalTypes entries. Each iteration:
+// enrichLocalTypesFromBindings resolves LocalCallBindings,
+// LocalMethodBindings, and LocalDestructureBindings into LocalTypes
+// entries, iterating to a fixed point so chained bindings converge.
 //
-//   - Bare-identifier bindings (`const x = factory()`) resolve via
-//     the file's scope, picking up the callee's ReturnType.
-//   - Method-on-receiver bindings (`const x = recv.method()`)
-//     resolve only after recv's own type is known — typically set
-//     by an earlier iteration of this same loop.
-//   - Destructure bindings (`const { a } = recv.method()`) follow
-//     the source function's return-type class properties OR its
-//     inferred InlineReturnProperties when the function lacks an
-//     explicit annotation.
-//
-// Iteration continues until no new LocalTypes are added, so chains
-// like `const a = fn(); const b = a.x(); const c = b.y()` converge
-// in O(chain-depth) passes (rarely more than three or four).
-//
-// symbolsByID is refreshed at the start of each iteration because
-// recordLocalType may have assigned a fresh map to sym.LocalTypes
-// in the previous iteration — the index's value copies need to be
-// rebuilt to see the new reference.
+// symbolsByID is rebuilt at the start of each iteration because
+// recordLocalType may have assigned a fresh map to sym.LocalTypes;
+// the index's value copies need to be refreshed to see it.
 func (ctx *resolveContext) enrichLocalTypesFromBindings() {
 	for changed := true; changed; {
 		ctx.symbolsByID = buildSymbolByIDIndex(ctx.p)
@@ -109,17 +78,9 @@ func (ctx *resolveContext) enrichLocalTypesFromBindings() {
 	}
 }
 
-// lookupDestructuredPropertyType walks a destructuring source down
-// to the type of one of its properties. Tries two paths:
-//
-//   - the source's named return type (`function setup(): Bag`):
-//     reduce to a class or interface, read the property off
-//     ClassDetails/InterfaceDetails.Properties;
-//   - the source's inferred inline-object return
-//     (`function setup() { return { a: new T(), b } }`): read the
-//     property off the source function's InlineReturnProperties.
-//
-// Returns "" when neither path yields a type.
+// lookupDestructuredPropertyType returns the type of src.Property,
+// reading it off the source function's declared return-type class
+// or interface, or its InlineReturnProperties when un-annotated.
 func (ctx *resolveContext) lookupDestructuredPropertyType(caller Symbol, src LocalDestructureSource) string {
 	var sourceFn *Symbol
 	if src.Receiver == "" {
@@ -192,10 +153,8 @@ func (ctx *resolveContext) lookupFunctionInScope(file, callee string) *Symbol {
 	return nil
 }
 
-// lookupMethodOnLocal finds the method symbol named methodName on
-// the class of a local var in caller's body. Mirrors
-// lookupMethodReturnTypeOnLocal but returns the method symbol
-// itself so callers can read both ReturnType and File.
+// lookupMethodOnLocal returns the method symbol named methodName on
+// the class bound to recvName in caller's LocalTypes.
 func (ctx *resolveContext) lookupMethodOnLocal(caller Symbol, recvName, methodName string) *Symbol {
 	className, ok := caller.LocalTypes[recvName]
 	if !ok {
@@ -265,11 +224,9 @@ func (ctx *resolveContext) recordLocalType(sym *Symbol, local, retType string, o
 	return true
 }
 
-// lookupMethodReturnTypeOnLocal mirrors resolveLocalInstanceCall's
-// class-chain walk but returns the resolved method's ReturnType
-// instead of its symbol IDs. Used by the enrichment loop to follow
-// `const x = recv.method()` initializers when recv's type is
-// already known in caller.LocalTypes.
+// lookupMethodReturnTypeOnLocal returns the ReturnType of the method
+// named methodName on the class bound to recvName in caller's
+// LocalTypes.
 func (ctx *resolveContext) lookupMethodReturnTypeOnLocal(caller Symbol, recvName, methodName string) string {
 	className, ok := caller.LocalTypes[recvName]
 	if !ok {
@@ -440,11 +397,9 @@ func buildScopes(p *Project, idx symbolIndex) map[string]*scope {
 	return out
 }
 
-// buildNamespaceReExportIndex maps each file to its
-// `export * as Name from "./other"` declarations: localName → resolved
-// source-module path. Consulted before the regular named-binding
-// path so a re-export of this shape becomes a namespace alias rather
-// than a (broken) named lookup.
+// buildNamespaceReExportIndex maps each file's
+// `export * as Name from "./other"` declarations as
+// localName → resolved source-module path.
 func buildNamespaceReExportIndex(p *Project) map[string]map[string]string {
 	out := map[string]map[string]string{}
 	for _, re := range p.ReExports {
@@ -620,12 +575,10 @@ func (ctx *resolveContext) resolveCall(call *CallSite) []string {
 	return nil
 }
 
-// resolveStaticMethodCall handles `ClassName.method()` where the
-// receiver is the bare name of a class symbol reachable from the
-// caller's file (same-file declaration, or any import shape resolved
-// in the call's scope). The lookup is by method name only — no
-// distinction between static and instance methods, since the
-// extractor does not currently capture the `static` modifier.
+// resolveStaticMethodCall handles `ClassName.method()` when
+// ClassName resolves to a class in call.File's scope. Lookup is by
+// method name; the static/instance distinction isn't captured by
+// the extractor.
 func (ctx *resolveContext) resolveStaticMethodCall(call *CallSite) []string {
 	classSym, ok := ctx.findClassByName(call.File, call.Receiver)
 	if !ok {
@@ -683,13 +636,10 @@ func (ctx *resolveContext) resolveThisCall(call *CallSite) []string {
 	return ctx.findMethodInInterfaceChain(chain, call.Callee)
 }
 
-// resolveThisFieldCall handles `this.<field>.<method>()` where
-// <field> is a typed property declared on the enclosing class or
-// any of its ancestors. The property's declared type is read off
-// ClassDetails.Properties (which now includes constructor-parameter
-// shorthand), generic arguments are stripped (`Repository<Foo>` →
-// `Repository`), and the method is resolved against the resulting
-// class's chain with the same interface fallback used elsewhere.
+// resolveThisFieldCall handles `this.<a>.<b>.<method>()`. Walks the
+// path of typed properties through the enclosing class's chain
+// (including constructor-parameter shorthand), then resolves the
+// method against the final class's chain with interface fallback.
 func (ctx *resolveContext) resolveThisFieldCall(call *CallSite, path []string) []string {
 	if len(path) == 0 {
 		return nil
@@ -745,13 +695,9 @@ func (ctx *resolveContext) lookupPropertyTypeInClassChain(classSym Symbol, propN
 }
 
 // stripGenericArgs reduces a TypeScript type annotation to a single
-// class-or-interface identifier the resolver can look up. Generic
-// arguments are dropped (`Repository<Asset>` → `Repository`), and
-// `Promise<T>` wrappers are peeled before stripping so awaited
-// async returns resolve to the inner type (`Promise<Promise<Foo>>`
-// → `Foo`). Treating Promise as transparent is safe in practice
-// because method calls on Promise instances (`.then`, `.catch`)
-// aren't in any user project anyway.
+// class-or-interface identifier. Peels `Promise<T>` wrappers
+// recursively so awaited async returns resolve to the inner type,
+// then drops any remaining generic arguments.
 func stripGenericArgs(typ string) string {
 	typ = strings.TrimSpace(typ)
 	for strings.HasPrefix(typ, "Promise<") && strings.HasSuffix(typ, ">") {
@@ -937,15 +883,11 @@ func (ctx *resolveContext) findInterfaceByName(fromFile, name string) (Symbol, b
 	return ctx.findSymbolByNameAndKind(fromFile, name, SymbolInterface)
 }
 
-// findSymbolByNameAndKind looks up a symbol of the given kind by
-// name. Same-file declarations win; otherwise the file's import
-// scope is consulted. When neither path matches, a project-wide
-// fallback returns the unique symbol with this (name, kind) — safe
-// because uniqueness rules out ambiguity. The fallback handles
-// the case where a return type or inherited field's class isn't
-// imported into the caller's file (e.g. `const ctx = newContext();
-// const u = ctx.newUser();` where `ctx`'s class TestContext is
-// imported only into the factory's file, not the consumer's).
+// findSymbolByNameAndKind looks up (name, kind) in this order:
+// same-file declarations, file's import scope, then a project-wide
+// uniqueness fallback (one match across the project, no ambiguity).
+// The fallback covers cases where a type isn't imported into the
+// caller's file but resolves unambiguously elsewhere.
 func (ctx *resolveContext) findSymbolByNameAndKind(fromFile, name string, kind SymbolKind) (Symbol, bool) {
 	for _, id := range ctx.symbolsByFile[fromFile][name] {
 		if s, ok := ctx.symbolsByID[id]; ok && s.Kind == kind {

@@ -39,10 +39,8 @@ func TestResolveCalls_factoryReturn_directName(t *testing.T) {
 		"box.open() must resolve to Box.open via makeBox's `: Box` return type")
 }
 
-// TestResolveCalls_factoryReturn_aliasedImport confirms the
-// resolution survives an `import { makeBox as buildBox } from ...`
-// rename — the callee identifier in source is `buildBox`, but it
-// resolves to `makeBox`'s symbol which has the `Box` return type.
+// TestResolveCalls_factoryReturn_aliasedImport pins that resolution
+// survives an `import { makeBox as buildBox }` rename.
 func TestResolveCalls_factoryReturn_aliasedImport(t *testing.T) {
 	p := buildAndResolveFactoryReturn(t)
 
@@ -63,10 +61,8 @@ func TestResolveCalls_factoryReturn_aliasedImport(t *testing.T) {
 }
 
 // TestResolveCalls_factoryReturn_promiseUnwrapped pins that
-// `Promise<Box>` is unwrapped to `Box` during type resolution, so
-// `await makeBoxAsync(...).open()` resolves to Box.open. Same
-// rule applies whether or not the variable was actually awaited:
-// TypeScript treats Promise<T> as transparent for our purposes.
+// Promise<Box> unwraps to Box so `await makeBoxAsync().open()`
+// resolves to Box.open.
 func TestResolveCalls_factoryReturn_promiseUnwrapped(t *testing.T) {
 	p := buildAndResolveFactoryReturn(t)
 

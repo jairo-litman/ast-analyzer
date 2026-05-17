@@ -17,10 +17,9 @@ func buildAndResolveInferredReturns(t *testing.T) *Project {
 	return p
 }
 
-// TestResolveCalls_inferredReturn_newT pins Alt-2: a function with
-// no explicit return type whose body is a single `return new T(...)`
-// gains an inferred ReturnType of `T`, so consumers can chain
-// `const a = factory(); a.method()`.
+// TestResolveCalls_inferredReturn_newT pins that an un-annotated
+// `return new T(...)` body gains ReturnType T so `a = factory();
+// a.method()` resolves.
 func TestResolveCalls_inferredReturn_newT(t *testing.T) {
 	p := buildAndResolveInferredReturns(t)
 
@@ -40,14 +39,10 @@ func TestResolveCalls_inferredReturn_newT(t *testing.T) {
 		"a.rename() must resolve via inferred return type Asset of makeAsset()")
 }
 
-// TestResolveCalls_inferredReturn_objectLiteral pins Alt-3: a
-// function with no explicit return type that returns an object
-// literal exposes per-property types, so destructuring resolves.
-// Three key shapes:
-//   - { asset: new Asset() }   — new-expression rhs
-//   - { service: new Service() } — same
-//   - { helper }               — shorthand for a local var typed
-//     via new in the same body
+// TestResolveCalls_inferredReturn_objectLiteral pins that an
+// un-annotated function returning `{ asset: new Asset(), service:
+// new Service(), helper }` exposes per-property types so
+// destructuring on the caller resolves.
 func TestResolveCalls_inferredReturn_objectLiteral(t *testing.T) {
 	p := buildAndResolveInferredReturns(t)
 

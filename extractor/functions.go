@@ -47,24 +47,12 @@ func (e *Extractor) QueryFunctions(node *sitter.Node, source []byte) ([]Function
 	return dedupeFunctionsByStartByte(functions), nil
 }
 
-// dedupeFunctionsByStartByte folds away the duplicates introduced
-// by the catch-all anonymous-arrow capture. Two situations:
-//
-//  1. The arrow is bound to a name (`const f = () => { ... }`) or
-//     declared as a class field. The specific capture wraps the
-//     variable_declarator / public_field_definition, so its
-//     FunctionContext has a different start byte than the inner
-//     arrow's. Dedup-by-start-byte can't merge them — explicit
-//     filter on the generic entry instead.
-//
-//  2. The arrow is an IIFE (`(() => { ... })()`). The specific
-//     capture and the generic capture both wrap the same
-//     arrow_function with the same start byte. Plain
-//     dedup-by-start-byte handles it.
-//
-// Test callbacks (`it('...', () => { ... })`), inline closures
-// (`array.forEach(item => { ... })`), and object-literal arrows
-// have no specific capture and survive both phases.
+// dedupeFunctionsByStartByte folds away duplicates from the
+// catch-all anonymous-arrow capture. First filters generic entries
+// whose parent is a variable_declarator or public_field_definition
+// (those don't share a start byte with the named capture); then
+// dedups remaining entries by start byte, preferring named over
+// synthetic names.
 func dedupeFunctionsByStartByte(functions []FunctionContext) []FunctionContext {
 	out := functions[:0]
 	for _, fn := range functions {
@@ -132,11 +120,9 @@ func (e *Extractor) extractFunctionContext(captureNames []string, match *sitter.
 		fn.Parameters = walkFormalParameters(&params, source)
 	}
 
-	// Anonymous arrows (IIFE wrappers, test callbacks, inline
-	// closures) have no source name; tag with a synthetic name so
-	// the symbol catalog never carries empty names. IIFE form gets
-	// `(iife)` because its parent is a parenthesized_expression in
-	// a call_expression; all other anonymous arrows get `(arrow)`.
+	// Anonymous arrows: tag with a synthetic name so the symbol
+	// catalog never carries empty names. IIFE form gets `(iife)`;
+	// all other anonymous arrows get `(arrow)`.
 	if fn.Name == "" && fn.Node != nil && fn.Node.Kind() == "arrow_function" {
 		if parent := fn.Node.Parent(); parent != nil && parent.Kind() == "parenthesized_expression" {
 			fn.Name = "(iife)"

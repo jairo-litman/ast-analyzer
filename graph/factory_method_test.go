@@ -17,11 +17,9 @@ func buildAndResolveFactoryMethod(t *testing.T) *Project {
 	return p
 }
 
-// TestResolveCalls_methodReturn_chained pins the two-hop chain:
-//
-//	const ctx = newContext();   // TestContext (Fix 4)
-//	const user = ctx.newUser(); // User (Fix 5, depends on ctx's type)
-//	user.rename(...)            // resolves to User.rename
+// TestResolveCalls_methodReturn_chained pins a two-hop chain:
+// `ctx = newContext(); user = ctx.newUser(); user.rename()`
+// resolves to User.rename.
 func TestResolveCalls_methodReturn_chained(t *testing.T) {
 	p := buildAndResolveFactoryMethod(t)
 
@@ -42,10 +40,8 @@ func TestResolveCalls_methodReturn_chained(t *testing.T) {
 }
 
 // TestResolveCalls_methodReturn_promiseUnwrapped pins that
-// `Promise<User>` is unwrapped to `User` during the enrichment
-// chain. `await ctx.newAsync(...)` followed by `u.rename(...)`
-// resolves through both Fix 5 (method-on-receiver) and Promise
-// unwrapping.
+// `u = await ctx.newAsync(); u.rename()` unwraps Promise<User> to
+// User and resolves through method-on-receiver enrichment.
 func TestResolveCalls_methodReturn_promiseUnwrapped(t *testing.T) {
 	p := buildAndResolveFactoryMethod(t)
 

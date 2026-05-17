@@ -491,16 +491,10 @@ func processFile(e *extractor.Extractor, project *Project, relPath, absPath stri
 	return nil
 }
 
-// collectFunctionSymbols turns each FunctionContext into a Symbol and
-// returns the function byte ranges so call-site attribution can
-// later pair each call with its enclosing function.
-//
-// Method symbols are extended backward through any preceding
-// decorator siblings so `@memoize compute()` is one contiguous range.
-//
-// Each symbol's LocalTypes is populated from `const x = new T(...)`
-// and `const x: T = ...` declarations inside the body so the
-// resolver can later type-check method calls on those variables.
+// collectFunctionSymbols turns each FunctionContext into a Symbol
+// and returns the function byte ranges for call-site attribution.
+// Method symbols extend backward through preceding decorator
+// siblings so `@memoize compute()` is one contiguous range.
 func collectFunctionSymbols(project *Project, fr *FileResult, relPath string, source []byte) []functionRange {
 	var ranges []functionRange
 	for _, fn := range fr.Functions {
@@ -821,13 +815,10 @@ func unwrapAwait(value *sitter.Node) *sitter.Node {
 	return value
 }
 
-// extractDestructureBindings handles `const { a, b: alias } =
-// factory(...)` / `const { ctx } = await factory(...)` /
-// `const { x } = receiver.method(...)`. For each destructured
-// shorthand or pair pattern it records the source-call shape
-// (Receiver, Callee) and the property name being destructured.
-// Array patterns and rest elements are out of scope. Each entry
-// shares the same source-call info but lists its own Property.
+// extractDestructureBindings records the (source call, property)
+// pair for each entry in `const { a, b: alias } = factory()` and
+// its awaited / method-on-receiver variants. Array patterns and
+// rest elements are skipped.
 func extractDestructureBindings(decl *sitter.Node, source []byte, out map[string]LocalDestructureSource) {
 	pattern := decl.ChildByFieldName("name")
 	if pattern == nil || pattern.Kind() != "object_pattern" {

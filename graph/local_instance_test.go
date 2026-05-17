@@ -59,12 +59,8 @@ func TestResolveCalls_localInstanceScopePerFunction(t *testing.T) {
 	assert.Equal(t, []string{boxLabel}, innerCall.ResolvedTo)
 }
 
-// TestSymbol_localTypesPersisted pins that the resolver-relevant
-// LocalTypes map round-trips through the persistence layer so a
-// project loaded from store resolves the same calls. Light coupling
-// to the store package would be over-engineering — the actual store
-// round-trip lives in pkg store; here we just verify the field is
-// populated post-build.
+// TestSymbol_localTypesPersisted pins that BuildProject populates
+// Symbol.LocalTypes. (Store round-trip lives in the store package.)
 func TestSymbol_localTypesPersisted(t *testing.T) {
 	p, err := BuildProject("testdata/local_instance", "testdata/local_instance/tsconfig.json")
 	require.NoError(t, err)

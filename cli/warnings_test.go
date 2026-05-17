@@ -44,9 +44,8 @@ func TestRun_listRebuildEmitsBuildWarnings(t *testing.T) {
 	assert.Contains(t, stderr.String(), "default export")
 }
 
-// TestRun_listFromDBNoWarnings pins the load path: warnings aren't
-// persisted, so list against a previously-built DB stays quiet on
-// stderr (no double emission).
+// TestRun_listFromDBNoWarnings pins that warnings aren't persisted,
+// so list against a built DB stays quiet on stderr.
 func TestRun_listFromDBNoWarnings(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "graph.db")
 	indexFixtureToDB(t, multiDefaultRoot, multiDefaultTsconfig, dbPath)

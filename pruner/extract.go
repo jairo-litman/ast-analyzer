@@ -11,32 +11,15 @@ import (
 	"github.com/jairo-litman/ast-analyzer/graph"
 )
 
-// Extract is the legacy entry point. It delegates to
-// ExtractWithOptions using DefaultExtractOptions (1-hop callers and
-// callees, signatures only, soft cap of 50 entries per level).
+// Extract calls ExtractWithOptions with DefaultExtractOptions.
 func Extract(p *graph.Project, symbolID string) (*Context, error) {
 	return ExtractWithOptions(p, symbolID, DefaultExtractOptions())
 }
 
-// ExtractWithOptions assembles a Context for the symbol identified
-// by symbolID, walking the call graph up to opts.CallerDepth /
-// opts.CalleeDepth hops in each direction. Entries at depth within
-// CallerBodyDepth / CalleeBodyDepth carry the full source body in
-// addition to the always-present Signature. MaxPerLevel optionally
-// caps the number of entries kept at each level (deterministic by
-// symbol-ID sort) to avoid explosion on densely-called symbols.
-//
-// Module-kind targets are rejected. Per-kind shape:
-//
-//   - function: full Context (body + enclosing class header +
-//     imports + callees + callers).
-//   - class: target source is the full class declaration; callees
-//     stay empty regardless of CalleeDepth (classes are never the
-//     CallerID of a call); callers are the `new T(...)` invocations
-//     the resolver linked here.
-//   - interface / enum / type_alias: target source is the
-//     declaration; callees and EnclosingType empty; callers come
-//     from any call whose ResolvedTo includes the target.
+// ExtractWithOptions assembles a Context for symbolID. Module-kind
+// targets are rejected. For class / interface / enum / type_alias
+// targets the callees slice stays empty; callers come from any call
+// whose ResolvedTo includes the target.
 func ExtractWithOptions(p *graph.Project, symbolID string, opts ExtractOptions) (*Context, error) {
 	target, ok := lookupSymbol(p, symbolID)
 	if !ok {
@@ -202,10 +185,9 @@ func findEnclosingClass(p *graph.Project, target graph.Symbol) (graph.Symbol, bo
 	return best, found
 }
 
-// renderEnclosingClass produces the EnclosingType.Source string. The
-// ClassDetails-driven path emits a stripped header (declaration line,
-// properties, method signatures, no bodies). The full-source fallback
-// fires only for hand-constructed Symbols missing ClassDetails.
+// renderEnclosingClass returns a stripped class header from
+// ClassDetails, falling back to the full source slice for symbols
+// without ClassDetails.
 func renderEnclosingClass(cache *sourceCache, encl graph.Symbol) (string, error) {
 	if encl.ClassDetails != nil {
 		return renderClassHeader(encl.Name, encl.ClassDetails), nil
@@ -361,10 +343,8 @@ func collectCalleesBFS(p *graph.Project, cache *sourceCache, target graph.Symbol
 	return result, nil
 }
 
-// collectCallersBFS is the inverse: walks the call graph upward from
-// target up to opts.CallerDepth hops. Module-kind callers are
-// retained as terminals — they cannot themselves be called, so they
-// never enter the next frontier.
+// collectCallersBFS walks the call graph upward from target up to
+// opts.CallerDepth hops. Module-kind callers terminate the frontier.
 func collectCallersBFS(p *graph.Project, cache *sourceCache, target graph.Symbol, opts ExtractOptions) ([]Caller, error) {
 	if opts.CallerDepth <= 0 {
 		return nil, nil

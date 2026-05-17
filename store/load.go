@@ -215,7 +215,6 @@ func decodeSymbolDetails(s *graph.Symbol, details string) error {
 	case graph.SymbolFunction:
 		var fd functionDetails
 		if err := json.Unmarshal([]byte(details), &fd); err != nil {
-			// Legacy index: details held the LocalTypes map directly.
 			var lt map[string]string
 			if legacyErr := json.Unmarshal([]byte(details), &lt); legacyErr != nil {
 				return err

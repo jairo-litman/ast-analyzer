@@ -35,11 +35,8 @@ type ExtractOptions struct {
 	TypeDepth int
 }
 
-// DefaultExtractOptions reproduces the legacy single-hop behavior:
-// direct callers and direct callees, both with full bodies (matching
-// the original renderer output), and a soft cap of 50 entries per
-// level. Callers asking for signature-only output should pass
-// {Caller,Callee}BodyDepth=0 explicitly.
+// DefaultExtractOptions returns single-hop callers and callees with
+// full bodies, no type expansion, and a soft cap of 50 per level.
 func DefaultExtractOptions() ExtractOptions {
 	return ExtractOptions{
 		CallerDepth:     1,

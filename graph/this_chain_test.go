@@ -17,10 +17,9 @@ func buildAndResolveThisChain(t *testing.T) *Project {
 	return p
 }
 
-// TestResolveCalls_thisChain_twoSegments pins `this.<a>.<b>.<m>()`:
-// the receiver path has two segments (mid → leaf), spanning two
-// files. Each segment is a typed class field; the method on the
-// final class must resolve.
+// TestResolveCalls_thisChain_twoSegments pins that
+// `this.mid.leaf.sing()` walks two typed-field hops across files
+// and resolves to Leaf.sing.
 func TestResolveCalls_thisChain_twoSegments(t *testing.T) {
 	p := buildAndResolveThisChain(t)
 

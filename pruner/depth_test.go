@@ -25,8 +25,8 @@ func callerNames(callers []Caller) []string {
 	return out
 }
 
-// TestExtractWithOptions_defaultsMatchExtract pins that the default
-// options reproduce the legacy Extract output for shape and depth.
+// TestExtractWithOptions_defaultsMatchExtract pins that Extract and
+// ExtractWithOptions(DefaultExtractOptions()) produce the same shape.
 func TestExtractWithOptions_defaultsMatchExtract(t *testing.T) {
 	p := buildAndResolve(t, "call_chain")
 	aID := symbolID(t, p, "a.ts", "a")
@@ -42,7 +42,7 @@ func TestExtractWithOptions_defaultsMatchExtract(t *testing.T) {
 	assert.Equal(t, len(base.Callers), len(ctx.Callers))
 	for _, c := range ctx.Callees {
 		assert.Equal(t, 1, c.Depth, "default callees are depth-1")
-		assert.NotEmpty(t, c.Body, "default callees carry body (matches legacy renderer)")
+		assert.NotEmpty(t, c.Body, "default callees carry body")
 	}
 }
 
