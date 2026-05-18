@@ -12,7 +12,7 @@ heuristic with a surgical extractor: given a target symbol in a
 TypeScript repository, return only the symbol's body, its enclosing
 class header (when applicable), the signatures of its callers and
 callees, the declarations of the types it references (explicit
-annotations and inferred), and the file's imports — driven by a
+annotations and inferred), and the file's imports, driven by a
 tree-sitter parse tree and an inter-procedural call graph augmented
 with a type-reference graph.
 
@@ -26,7 +26,7 @@ go build -o astanalyzer ./cmd/astanalyzer
 
 # 1. index the project once: walks the tree, parses every .ts/.tsx
 #    file in parallel, persists the graph to SQLite. Re-runs are
-#    incremental — only files whose content hash changed get re-parsed.
+#    incremental, only files whose content hash changed get re-parsed.
 ./astanalyzer index --tsconfig path/to/tsconfig.json path/to/project
 
 # 2. enumerate every symbol the analyzer found
@@ -55,14 +55,14 @@ during `index`, `watch`, and any `--rebuild` path.
 large project's symbol catalog before piping into anything else.
 
 `extract`'s output formats:
-- **json** — the structured `Context` payload.
-- **redacted** — multi-file source-faithful view with `<- cut content ->`
+- **json** - the structured `Context` payload.
+- **redacted** - multi-file source-faithful view with `<- cut content ->`
   markers between kept regions. Each file's section is prefixed with
   a `// callees: …` / `// callers: …` / `// types: name (depth=N, kind, origins=…)`
   metadata comment summarizing what was pulled in. Doc comments
   (`/** … */` or runs of `//` lines) above kept declarations travel
   with the source.
-- **markdown** — same algorithm as redacted, wrapped in `## file:`
+- **markdown** - same algorithm as redacted, wrapped in `## file:`
   headings with fenced `ts` code blocks. Prompt-ready.
 
 Symbol IDs are file-and-position keyed (`<relpath>#<startByte>`, or
@@ -74,15 +74,15 @@ returns direct callers and direct callees with their full bodies and
 no type declarations. Six flags shape the slice; defaults reproduce
 the legacy behavior, so existing invocations need no changes:
 
-- `--caller-depth N` / `--callee-depth N` — BFS depth in each
+- `--caller-depth N` / `--callee-depth N` - BFS depth in each
   direction over the call graph (0 = none, 1 = direct, N = N hops).
   Default 1. Cycles and self-calls terminate via a visited set
   seeded with the target.
-- `--caller-bodies-up-to N` / `--callee-bodies-up-to N` — full-body
+- `--caller-bodies-up-to N` / `--callee-bodies-up-to N` - full-body
   inclusion cap. Entries at depth within this number carry their
   full source; deeper entries reduce to the declaration line
   (`function foo(x: T): R`) with the body bytes elided. Default 1.
-- `--type-depth N` — BFS depth over the type-reference graph
+- `--type-depth N` - BFS depth over the type-reference graph
   (0 = none, 1 = types directly referenced by the target, N = N
   hops). On a function target the direct references are parameter
   types, the return type, and local-variable types; on a class
@@ -93,7 +93,7 @@ the legacy behavior, so existing invocations need no changes:
   (`annotation`, `inferred:new`, `inferred:call-return`,
   `inferred:method-return`, `inferred:destructure`,
   `inferred:object-literal`). Default 0.
-- `--max-per-level N` — soft cap on entries kept at each BFS level,
+- `--max-per-level N` - soft cap on entries kept at each BFS level,
   applied after a deterministic sort by symbol ID. Default 50; pass
   `0` for no cap.
 
@@ -110,7 +110,7 @@ references of the target:
 
 ## Showcase
 
-A self-contained TypeScript fixture lives at `graph/testdata/full/` —
+A self-contained TypeScript fixture lives at `graph/testdata/full/`,
 a small Todo app with `tsconfig.json` paths (`@models/*`,
 `@services/*`, `@utils/*`), a class-inheritance chain (`BaseTodo` →
 `Todo`), interfaces, enums, type aliases, a default-export class, and
@@ -146,7 +146,7 @@ star variants:
 ```
 
 **Extract a class method.** Same flow, but the target is inside a
-class — the redacted view emits the enclosing class header with
+class, the redacted view emits the enclosing class header with
 sibling methods elided as `<- cut content ->`:
 
 ```sh
@@ -317,7 +317,7 @@ cli/
   watch.go              – fsnotify-driven watch loop with debounced re-index
 cmd/astanalyzer/
   main.go               – binary entry point; delegates to cli.Run
-jsonc/                  – tolerant JSONC reader (adapted, MIT — used to
+jsonc/                  – tolerant JSONC reader (adapted, MIT, used to
                           parse tsconfig.json with comments)
 ```
 
@@ -329,7 +329,7 @@ boilerplate to the per-capture switch.
 
 ## Build and test
 
-Requires Go 1.26+ (matching `go.mod`) and a working CGO toolchain — the
+Requires Go 1.26+ (matching `go.mod`) and a working CGO toolchain, the
 `go-tree-sitter` and `go-sqlite3` bindings build C sources.
 
 ```sh
@@ -346,6 +346,6 @@ should land as a failing test first.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE). The `jsonc/` package is adapted from
+MIT - see [`LICENSE`](LICENSE). The `jsonc/` package is adapted from
 <https://github.com/muhammadmuzzammil1998/jsonc> (MIT); that upstream
 notice is preserved in the package's source files.
