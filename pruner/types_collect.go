@@ -2,15 +2,20 @@ package pruner
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/jairo-litman/ast-analyzer/graph"
 )
 
 // collectTypesBFS walks the target's TypeRefs outward up to
 // opts.TypeDepth hops, one TypeEntry per distinct referenced symbol.
-// Cycles terminate via a visited set seeded with the target.
+// For type-kind targets, extends / implements relationships always
+// surface at depth 1 (structural minimum) regardless of TypeDepth,
+// since they are part of the type's own declaration. Cycles
+// terminate via a visited set seeded with the target.
 func collectTypesBFS(p *graph.Project, cache *sourceCache, target graph.Symbol, opts ExtractOptions) ([]TypeEntry, error) {
-	if opts.TypeDepth <= 0 {
+	structuralOnly := opts.TypeDepth <= 0
+	if structuralOnly && !isTypeKind(target.Kind) {
 		return nil, nil
 	}
 
@@ -19,8 +24,12 @@ func collectTypesBFS(p *graph.Project, cache *sourceCache, target graph.Symbol, 
 	var order []string
 
 	frontier := []string{target.ID}
+	maxDepth := opts.TypeDepth
+	if structuralOnly {
+		maxDepth = 1
+	}
 
-	for depth := 1; depth <= opts.TypeDepth && len(frontier) > 0; depth++ {
+	for depth := 1; depth <= maxDepth && len(frontier) > 0; depth++ {
 		buckets := map[string][]graph.TypeOrigin{}
 		for _, currentID := range frontier {
 			sym, ok := lookupSymbol(p, currentID)
@@ -28,6 +37,11 @@ func collectTypesBFS(p *graph.Project, cache *sourceCache, target graph.Symbol, 
 				continue
 			}
 			for _, sref := range sym.TypeRefs {
+				// At depth 1 with TypeDepth=0, only structural slots
+				// contribute. Once we descend further, all slots count.
+				if structuralOnly && depth == 1 && !isStructuralSlot(sref.Slot) {
+					continue
+				}
 				sref.Ref.WalkBaseTypes(func(node *graph.TypeRef) {
 					for _, targetID := range node.Targets {
 						if visited[targetID] {
@@ -78,6 +92,33 @@ func collectTypesBFS(p *graph.Project, cache *sourceCache, target graph.Symbol, 
 		out = append(out, *entriesByID[id])
 	}
 	return out, nil
+}
+
+// isTypeKind reports whether the symbol kind names a TS type
+// declaration (as opposed to a function or synthetic module).
+func isTypeKind(k graph.SymbolKind) bool {
+	switch k {
+	case graph.SymbolClass, graph.SymbolInterface, graph.SymbolTypeAlias, graph.SymbolEnum:
+		return true
+	}
+	return false
+}
+
+// isStructuralSlot reports whether a SymbolTypeRef.Slot describes a
+// structural relationship (extends / implements / type-alias RHS)
+// rather than an external dependency like a property type.
+func isStructuralSlot(slot string) bool {
+	switch {
+	case slot == "extends":
+		return true
+	case strings.HasPrefix(slot, "extends:"):
+		return true
+	case strings.HasPrefix(slot, "implements:"):
+		return true
+	case slot == "value":
+		return true
+	}
+	return false
 }
 
 // truncateTypeBucketsByID returns bucket keys sorted ascending,

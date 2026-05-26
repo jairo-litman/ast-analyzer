@@ -66,3 +66,6 @@ skills-lock.json
 
 # Latex
 .latex/
+
+# Binary output
+astanalyzer
