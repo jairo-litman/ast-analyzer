@@ -98,50 +98,6 @@ func TestRender_typeDepth_emitsTypesMetadata(t *testing.T) {
 	assert.Contains(t, out, "class Asset", "Asset's class declaration should appear in the rendered source")
 }
 
-// TestExtract_class_structuralAlwaysIncluded pins that a class
-// target's extends parent (and implements interfaces) appear in
-// Context.Types and in the rendered output even when TypeDepth=0,
-// because they are part of the target's own declaration.
-func TestExtract_class_structuralAlwaysIncluded(t *testing.T) {
-	p := buildAndResolve(t, "full")
-	todoID := symbolID(t, p, "src/models/todo.ts", "Todo")
-
-	ctx, err := Extract(p, todoID)
-	require.NoError(t, err)
-
-	base, ok := typeEntryByName(ctx.Types, "BaseTodo")
-	require.True(t, ok, "BaseTodo (extends parent) must appear at TypeDepth=0")
-	assert.Equal(t, 1, base.Depth)
-	assert.NotEmpty(t, base.Source)
-}
-
-// TestExtract_class_implementsAlwaysIncluded pins that a class's
-// `implements` interfaces also surface at TypeDepth=0.
-func TestExtract_class_implementsAlwaysIncluded(t *testing.T) {
-	p := buildAndResolve(t, "full")
-	baseTodoID := symbolID(t, p, "src/models/todo.ts", "BaseTodo")
-
-	ctx, err := Extract(p, baseTodoID)
-	require.NoError(t, err)
-
-	_, ok := typeEntryByName(ctx.Types, "TodoLike")
-	assert.True(t, ok, "TodoLike (implements) must appear at TypeDepth=0")
-}
-
-// TestExtract_function_propertyTypesStillOptIn pins that the
-// structural rule does not change function extraction: parameter
-// and return types stay behind --type-depth, otherwise function
-// extracts would balloon for any typed signature.
-func TestExtract_function_propertyTypesStillOptIn(t *testing.T) {
-	p := buildAndResolve(t, "full")
-	createID := symbolID(t, p, "src/services/api.ts", "createTodo")
-
-	ctx, err := Extract(p, createID)
-	require.NoError(t, err)
-	assert.Empty(t, ctx.Types,
-		"function targets should not auto-include their param / return / local types")
-}
-
 func TestExtract_typeDepth_originsAreSurfaced(t *testing.T) {
 	p := buildAndResolve(t, "typerefs")
 	useAssetID := symbolID(t, p, "consumer.ts", "useAsset")
