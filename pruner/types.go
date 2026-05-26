@@ -69,6 +69,35 @@ type Context struct {
 	// Types is the deduplicated set of type-bearing symbols reachable
 	// from the target's TypeRefs within ExtractOptions.TypeDepth hops.
 	Types []TypeEntry
+
+	// ImportChains records, for each file (other than the target's
+	// own) that references the target, the trail of import and
+	// re-export statements that bring the target's name into that
+	// file's scope.
+	ImportChains []ImportChain
+}
+
+// ImportChain is the trail of import / re-export hops that connect
+// an importing file to the target symbol. LocalName is the name as
+// it appears in the importing file's source; TargetName is the
+// canonical name at the declaration site.
+type ImportChain struct {
+	TargetSymbolID string
+	TargetName     string
+	LocalName      string
+	ImportingFile  string
+	Trail          []ChainHop
+}
+
+// ChainHop is one statement on an ImportChain. Kind is "import" for
+// the entry in the importing file, "re-export" for every subsequent
+// hop until the declaration site is reached.
+type ChainHop struct {
+	File      string
+	Kind      string
+	Source    string
+	StartByte uint
+	EndByte   uint
 }
 
 // TypeEntry is one type symbol surfaced by the TypeDepth BFS.

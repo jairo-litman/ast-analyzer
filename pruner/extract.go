@@ -80,7 +80,44 @@ func ExtractWithOptions(p *graph.Project, symbolID string, opts ExtractOptions) 
 	}
 	ctx.Types = types
 
+	ctx.ImportChains = collectImportChains(p, cache, ctx)
+
 	return ctx, nil
+}
+
+// collectImportChains walks the set of files that contribute
+// rendered content (callers, callees, type entries) and returns one
+// chain per file that has a traceable path to target. The target's
+// own file is excluded; duplicate entries (same importing file +
+// target) are deduplicated.
+func collectImportChains(p *graph.Project, cache *sourceCache, ctx *Context) []ImportChain {
+	files := map[string]bool{}
+	for _, c := range ctx.Callers {
+		if c.Symbol.File != "" && c.Symbol.File != ctx.Target.Symbol.File {
+			files[c.Symbol.File] = true
+		}
+	}
+	for _, c := range ctx.Callees {
+		if c.Symbol.File != "" && c.Symbol.File != ctx.Target.Symbol.File {
+			files[c.Symbol.File] = true
+		}
+	}
+	for _, te := range ctx.Types {
+		if te.Symbol.File != "" && te.Symbol.File != ctx.Target.Symbol.File {
+			files[te.Symbol.File] = true
+		}
+	}
+
+	out := make([]ImportChain, 0, len(files))
+	for f := range files {
+		if chain, ok := buildImportChainWithSource(p, cache, f, ctx.Target.Symbol); ok {
+			out = append(out, chain)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ImportingFile < out[j].ImportingFile
+	})
+	return out
 }
 
 // filterRelevantImports keeps only entries whose bindings are

@@ -96,7 +96,7 @@ func entryMetadata(ctx *Context, file string) string {
 		return fmt.Sprintf("%s (depth=%d, %s)", name, depth, mode)
 	}
 
-	var callees, callers, types []string
+	var callees, callers, types, chains []string
 	for _, c := range ctx.Callees {
 		if c.Symbol.File != file {
 			continue
@@ -115,8 +115,14 @@ func entryMetadata(ctx *Context, file string) string {
 		}
 		types = append(types, formatTypeEntry(te))
 	}
+	for _, chain := range ctx.ImportChains {
+		if chain.ImportingFile != file {
+			continue
+		}
+		chains = append(chains, formatImportChain(chain))
+	}
 
-	if len(callees) == 0 && len(callers) == 0 && len(types) == 0 {
+	if len(callees) == 0 && len(callers) == 0 && len(types) == 0 && len(chains) == 0 {
 		return ""
 	}
 	var sb strings.Builder
@@ -135,7 +141,39 @@ func entryMetadata(ctx *Context, file string) string {
 		sb.WriteString(strings.Join(types, "; "))
 		sb.WriteByte('\n')
 	}
+	if len(chains) > 0 {
+		sb.WriteString("// chains: ")
+		sb.WriteString(strings.Join(chains, "; "))
+		sb.WriteByte('\n')
+	}
 	return sb.String()
+}
+
+// formatImportChain renders one chain as `local -> canonical (via
+// file1, file2, ...)`. The "via" list omits the importing file (the
+// section already declares it) and the target file (implicit).
+func formatImportChain(c ImportChain) string {
+	if c.LocalName == c.TargetName {
+		if len(c.Trail) <= 1 {
+			return fmt.Sprintf("%s (direct)", c.LocalName)
+		}
+		return fmt.Sprintf("%s (via %s)", c.LocalName, hopFiles(c.Trail))
+	}
+	if len(c.Trail) <= 1 {
+		return fmt.Sprintf("%s -> %s (direct)", c.LocalName, c.TargetName)
+	}
+	return fmt.Sprintf("%s -> %s (via %s)", c.LocalName, c.TargetName, hopFiles(c.Trail))
+}
+
+func hopFiles(trail []ChainHop) string {
+	if len(trail) <= 1 {
+		return ""
+	}
+	files := make([]string, 0, len(trail)-1)
+	for _, h := range trail[1:] {
+		files = append(files, h.File)
+	}
+	return strings.Join(files, ", ")
 }
 
 // formatTypeEntry renders one TypeEntry as `Name (depth=N, kind,
@@ -513,6 +551,28 @@ func computeFileSections(ctx *Context, p *graph.Project, cache *sourceCache) (ma
 			perFile[te.Symbol.File] = append(perFile[te.Symbol.File], byteRange{
 				Start: start,
 				End:   te.Symbol.EndByte,
+			})
+		}
+	}
+
+	// Import chains: every hop adds a byte range to its own file
+	// section. The first hop is an import in the consuming file; the
+	// rest are re-exports in intermediate barrel files. Each
+	// re-export hop is expanded to pull in any preceding doc comment.
+	for _, chain := range ctx.ImportChains {
+		for i, hop := range chain.Trail {
+			if hop.EndByte <= hop.StartByte {
+				continue
+			}
+			start := hop.StartByte
+			if i > 0 {
+				if src, err := cache.source(hop.File); err == nil {
+					start = expandForLeadingComment(src, hop.StartByte)
+				}
+			}
+			perFile[hop.File] = append(perFile[hop.File], byteRange{
+				Start: start,
+				End:   hop.EndByte,
 			})
 		}
 	}
