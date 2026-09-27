@@ -663,34 +663,12 @@ func subtractRanges(ranges []byteRange, subtract []byteRange) []byteRange {
 // line-numbered text, with cut markers between non-adjacent ranges
 // and at file boundaries. Each range rounds to whole lines.
 func renderRangesAsLines(source []byte, ranges []byteRange) string {
-	if len(ranges) == 0 {
+	rounded := visibleRanges(source, ranges)
+	if len(rounded) == 0 {
 		return ""
 	}
 	lineStarts := computeLineStarts(source)
 	fileLen := uint(len(source))
-
-	rounded := make([]byteRange, 0, len(ranges))
-	for _, r := range ranges {
-		rounded = append(rounded, roundToLines(r, lineStarts, fileLen))
-	}
-	rounded = mergeRanges(rounded)
-
-	// Drop ranges whose content is all whitespace: these arise as
-	// by-products of class-method subtraction (blank lines between
-	// elided methods) and otherwise show up as `<- cut content ->\n
-	// NN: \n<- cut content ->`. Folding them into a single cut keeps
-	// the elision visually quiet.
-	filtered := rounded[:0]
-	for _, r := range rounded {
-		if isAllWhitespace(source[r.Start:r.End]) {
-			continue
-		}
-		filtered = append(filtered, r)
-	}
-	rounded = filtered
-	if len(rounded) == 0 {
-		return ""
-	}
 
 	var sb strings.Builder
 	if rounded[0].Start > 0 {
@@ -720,6 +698,34 @@ func renderRangesAsLines(source []byte, ranges []byteRange) string {
 		sb.WriteByte('\n')
 	}
 	return sb.String()
+}
+
+// visibleRanges rounds ranges to whole lines, merges overlaps, and
+// drops whitespace-only ranges. The result is exactly what
+// renderRangesAsLines prints.
+func visibleRanges(source []byte, ranges []byteRange) []byteRange {
+	if len(ranges) == 0 {
+		return nil
+	}
+	lineStarts := computeLineStarts(source)
+	fileLen := uint(len(source))
+
+	rounded := make([]byteRange, 0, len(ranges))
+	for _, r := range ranges {
+		rounded = append(rounded, roundToLines(r, lineStarts, fileLen))
+	}
+	rounded = mergeRanges(rounded)
+
+	// Whitespace-only ranges are by-products of class-method
+	// subtraction; they fold into the surrounding cut markers.
+	filtered := rounded[:0]
+	for _, r := range rounded {
+		if isAllWhitespace(source[r.Start:r.End]) {
+			continue
+		}
+		filtered = append(filtered, r)
+	}
+	return filtered
 }
 
 // computeLineStarts returns the byte offset of every line start in

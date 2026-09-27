@@ -14,13 +14,13 @@ func runExtract(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("extract", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: astanalyzer extract [--db <path> | --rebuild --tsconfig <path>] [--format json|redacted|markdown] [--caller-depth N] [--callee-depth N] [--caller-bodies-up-to N] [--callee-bodies-up-to N] [--type-depth N] [--max-per-level N] <root> <symbolID>")
+		fmt.Fprintln(stderr, "usage: astanalyzer extract [--db <path> | --rebuild --tsconfig <path>] [--format json|redacted|markdown|spans] [--caller-depth N] [--callee-depth N] [--caller-bodies-up-to N] [--callee-bodies-up-to N] [--type-depth N] [--max-per-level N] <root> <symbolID>")
 		fs.PrintDefaults()
 	}
 	dbPath := fs.String("db", "", "path to the SQLite index (default: <root>/"+defaultDBSubpath+")")
 	rebuild := fs.Bool("rebuild", false, "build the project from source instead of loading the index")
 	tsconfig := fs.String("tsconfig", "", "path to tsconfig.json (required with --rebuild)")
-	format := fs.String("format", "json", "output format: json | redacted | markdown")
+	format := fs.String("format", "json", "output format: json | redacted | markdown | spans")
 	noStaleCheck := fs.Bool("no-stale-check", false, "skip the on-disk hash check that warns when the index is out of date")
 
 	defaults := pruner.DefaultExtractOptions()
@@ -37,8 +37,10 @@ func runExtract(args []string, stdout, stderr io.Writer) error {
 	if fs.NArg() != 2 {
 		return errors.New("extract requires two positional arguments: <root> <symbolID>")
 	}
-	if *format != "json" && *format != "redacted" && *format != "markdown" {
-		return fmt.Errorf("--format must be 'json', 'redacted', or 'markdown', got %q", *format)
+	switch *format {
+	case "json", "redacted", "markdown", "spans":
+	default:
+		return fmt.Errorf("--format must be 'json', 'redacted', 'markdown', or 'spans', got %q", *format)
 	}
 	if *callerDepth < 0 || *calleeDepth < 0 || *callerBodyDepth < 0 || *calleeBodyDepth < 0 || *maxPerLevel < 0 || *typeDepth < 0 {
 		return errors.New("depth and cap flags must be non-negative")
@@ -87,6 +89,14 @@ func runExtract(args []string, stdout, stderr io.Writer) error {
 		}
 		_, err = fmt.Fprint(stdout, out)
 		return err
+	case "spans":
+		spans, err := pruner.RenderSpans(ctx, p)
+		if err != nil {
+			return err
+		}
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(spans)
 	default:
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")

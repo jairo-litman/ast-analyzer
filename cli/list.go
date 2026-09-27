@@ -1,23 +1,27 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/jairo-litman/ast-analyzer/graph"
+	"github.com/jairo-litman/ast-analyzer/pruner"
 )
 
 func runList(args []string, stdout, stderr io.Writer) error {
 	fs := flag.NewFlagSet("list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	fs.Usage = func() {
-		fmt.Fprintln(stderr, "usage: astanalyzer list [--db <path> | --rebuild --tsconfig <path>] [--kind ...] [--file <re>] [--name <re>] <root>")
+		fmt.Fprintln(stderr, "usage: astanalyzer list [--db <path> | --rebuild --tsconfig <path>] [--format table|json] [--kind ...] [--file <re>] [--name <re>] <root>")
 		fs.PrintDefaults()
 	}
 	dbPath := fs.String("db", "", "path to the SQLite index (default: <root>/"+defaultDBSubpath+")")
@@ -27,6 +31,7 @@ func runList(args []string, stdout, stderr io.Writer) error {
 	kindList := fs.String("kind", "", "comma-separated list of kinds to include (function, class, interface, enum, type_alias, module)")
 	fileRe := fs.String("file", "", "regex matched against the file column")
 	nameRe := fs.String("name", "", "regex matched against the symbol name")
+	format := fs.String("format", "table", "output format: table | json")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -34,6 +39,9 @@ func runList(args []string, stdout, stderr io.Writer) error {
 		return errors.New("list requires exactly one positional argument: <root>")
 	}
 	root := fs.Arg(0)
+	if *format != "table" && *format != "json" {
+		return fmt.Errorf("--format must be 'table' or 'json', got %q", *format)
+	}
 
 	filter, err := newSymbolFilter(*kindList, *fileRe, *nameRe)
 	if err != nil {
@@ -61,6 +69,10 @@ func runList(args []string, stdout, stderr io.Writer) error {
 		return syms[i].StartByte < syms[j].StartByte
 	})
 
+	if *format == "json" {
+		return writeListJSON(stdout, root, syms, filter)
+	}
+
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tKIND\tNAME\tFILE")
 	for _, s := range syms {
@@ -70,6 +82,52 @@ func runList(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", s.ID, s.Kind, s.Name, s.File)
 	}
 	return w.Flush()
+}
+
+// ListedSymbol is one row of `list --format json`. Lines are 1-based
+// and inclusive; EndByte is exclusive.
+type ListedSymbol struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	File      string `json:"file"`
+	StartByte uint   `json:"start_byte"`
+	EndByte   uint   `json:"end_byte"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+}
+
+func writeListJSON(stdout io.Writer, root string, syms []graph.Symbol, filter *symbolFilter) error {
+	indexes := map[string]pruner.LineIndex{}
+	rows := []ListedSymbol{}
+	for _, s := range syms {
+		if !filter.matches(s) {
+			continue
+		}
+		ix, ok := indexes[s.File]
+		if !ok {
+			src, err := os.ReadFile(filepath.Join(root, s.File))
+			if err != nil {
+				return fmt.Errorf("read %s: %w", s.File, err)
+			}
+			ix = pruner.NewLineIndex(src)
+			indexes[s.File] = ix
+		}
+		lines := ix.Span(s.StartByte, s.EndByte)
+		rows = append(rows, ListedSymbol{
+			ID:        s.ID,
+			Kind:      string(s.Kind),
+			Name:      s.Name,
+			File:      s.File,
+			StartByte: s.StartByte,
+			EndByte:   s.EndByte,
+			StartLine: lines.Start,
+			EndLine:   lines.End,
+		})
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(rows)
 }
 
 // validKinds is the set of SymbolKind strings the --kind filter
