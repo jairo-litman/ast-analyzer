@@ -69,3 +69,6 @@ skills-lock.json
 
 # Binary output
 astanalyzer
+
+# Harness
+bench/
